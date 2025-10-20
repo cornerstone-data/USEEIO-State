@@ -1,0 +1,46 @@
+---
+title: "Test CBE State vs GHGI"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+source("R/utils.R")
+source("R/StateEEIOFigures.R")
+source("R/StateEEIOCalculations.R")
+library(useeior)
+library(knitr)
+```
+
+
+
+```{r getCAmodel}
+rmarkdown::render('examples/DownloadandSaveModelLocally.Rmd', params =  list(states = c('CA'),model="v1.1-GHG",years=c(2019)))
+model <- readRDS("models/CAEEIOv1.1-GHG-19.rds")
+
+```
+
+
+```{r calcCBE, echo=FALSE}
+cbe <- calculateStateCBE(model)
+
+cbe_agg_soi <- aggregateStateResultMatrix(model, cbe, region=state)
+
+```
+
+
+
+```{r printStateCBE, echo=FALSE}
+kable(cbe_agg_soi, caption = "California CBE within State")
+```
+
+Total California CBE from CA in 2019 is `r sum(cbe_agg_soi)` metric tons CO2e.
+
+```{r getGHGI}
+ghgi <- getStateGHGI(model)
+
+sum(ghgi[,"Greenhouse Gases"])
+```
+
+The total California GHGI from GHGI data for 2019 is `r sum(ghgi$ )` metric tons CO2e.
+
+
