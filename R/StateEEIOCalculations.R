@@ -211,6 +211,8 @@ getStateGHGI <- function(model,RoUS=FALSE) {
   # Merge in sectors in case some are missing
   comms_in_m <- list(Sector=unique(model$Commodities$Code))
   GHGI <- merge(GHGI, comms_in_m, all=TRUE)   
+  # Replace NA values with 0 for sectors that are in comms_in_m but not in GHGI
+  GHGI$`Greenhouse Gases`[is.na(GHGI$`Greenhouse Gases`)] <- 0
   row.names(GHGI) <-  apply(cbind(GHGI['Sector'], loc), 1, FUN = useeior:::joinStringswithSlashes)
   GHGI <- matrix(GHGI[,c("Greenhouse Gases")],
                  dimnames=list(rownames(GHGI), c("Greenhouse Gases")))
