@@ -17,10 +17,11 @@ calculateStateCBE <- function(model, CO2e=TRUE, perspective="FINAL",
                                    household_emissions = household_emissions,
                                    show_RoW=show_RoW)
   # Note this function requires a model with only a single indicator
+  # r[2] is the H matrix, r[1] is the G matrix
   if(CO2e) {
-    r<-r$H_l
-  } else {
-    r<-r$G_l
+    r<-r[[2]]
+   } else {
+    r<-r[[1]]
   }
   return(r)
 }
