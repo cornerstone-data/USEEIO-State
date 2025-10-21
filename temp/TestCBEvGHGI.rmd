@@ -4,43 +4,179 @@ output: github_document
 ---
 
 ```{r setup, include=FALSE}
-source("R/utils.R")
-source("R/StateEEIOFigures.R")
-source("R/StateEEIOCalculations.R")
+source("../R/utils.R")
+source("../R/StateEEIOFigures.R")
+source("../R/StateEEIOCalculations.R")
 library(useeior)
 library(knitr)
+soi <- "CA"
+```
+
+To investigate issue [#1](https://github.com/cornerstone-data/USEEIO-State/issues/1), this analysis compares the
+California CBE as presented and compares it to the CA GHGI 2019 used in the model.
+
+Download and read in the CA model for 2019 with GHGs.
+```{r getCAmodel, echo=TRUE}
+#rmarkdown::render('../examples/DownloadandSaveModelLocally.Rmd', params =  list(states = c('CA'),model="v1.1-GHG",years=c(2019)))
+model <- readRDS("../models/CAEEIOv1.1-GHG-19.rds")
+```
+
+## Validate the model
+Make sure the model passes existing validation tests.
+```{r validateModel}
+printValidationResults(model)
 ```
 
 
+## Compare CBE from CA as done in report vs GHGI
+First calculate the CBE as done in the report, using the final perspective which is the default
+for calculateStateCBE. 
 
-```{r getCAmodel}
-rmarkdown::render('examples/DownloadandSaveModelLocally.Rmd', params =  list(states = c('CA'),model="v1.1-GHG",years=c(2019)))
-model <- readRDS("models/CAEEIOv1.1-GHG-19.rds")
-
+```{r calcCBEdefault, echo=TRUE}
+cbe <- calculateStateCBE(model,perspective="FINAL")
+cbe_fromCA <- subset(cbe, endsWith(rownames(cbe), soi)) 
 ```
 
-
-```{r calcCBE, echo=FALSE}
-cbe <- calculateStateCBE(model)
-
-cbe_agg_soi <- aggregateStateResultMatrix(model, cbe, region=state)
-
-```
-
-
-
-```{r printStateCBE, echo=FALSE}
-kable(cbe_agg_soi, caption = "California CBE within State")
-```
-
-Total California CBE from CA in 2019 is `r sum(cbe_agg_soi)` metric tons CO2e.
+Total California CBE in 2019 from CA calculated with the final perspective
+is `r sum(cbe_fromCA)` metric tons CO2e. 
+The total from all locations is `r sum(cbe)` metric tons CO2e.
 
 ```{r getGHGI}
 ghgi <- getStateGHGI(model)
-
-sum(ghgi[,"Greenhouse Gases"])
+total_ghgi <- sum(ghgi[,"Greenhouse Gases"])
 ```
 
-The total California GHGI from GHGI data for 2019 is `r sum(ghgi$ )` metric tons CO2e.
+The total California GHGI from model GHGI data for 2019 is `r total_ghgi` metric tons CO2e.
+
+The result is that the CBE attributed to CA is greater than the GHGI for CA.
+
+## Change in Method - Use DIRECT Perspective
+
+The DIRECT perspective calculation actually reveals emissions where they occur,
+rather than attributing them to the final goods and services consumed in the state.
+Recalculate the CBE using the direct perspective.
+
+```{r calculateCBEdirect, echo=TRUE}
+
+cbe <- calculateStateCBE(model,perspective="DIRECT")
+cbe_fromCA <- subset(cbe, endsWith(rownames(cbe), "CA")) 
+
+```
+
+Total California CBE from CA in 2019 calculated with the direct perspective is `r sum(cbe_fromCA)` metric tons CO2e.
+The total calculated from all locations is `r sum(cbe)` metric tons CO2e.
+
+To compare the CBE to the GHGI, the GHGI has to be translated into commodity format
+We use the commmodity mix matrix to do this.
+
+```{r compareCBEGHGIdirect, echo=TRUE}
+
+#Get the model list of industries in CA
+CA_inds <- model$Industries$Code_Loc[endsWith(model$Industries$Code_Loc, "CA")]
+
+#Index GHGI by CA industries
+mghgi <- ghgi[match(CA_inds, rownames(ghgi)), , drop=FALSE]
+
+
+print("Are the industry rows in the same order in GHGI and in CBE?")
+identical(rownames(mghgi),CA_inds)
+#mghgi<- as.matrix(ghgi)
+#dim(mghgi)
+C_m_CA <- subset(model$C_m, endsWith(rownames(model$C_m), "CA") , endsWith(colnames(model$C_m), "CA"))
+#dim(C_m_CA)
+
+#Left multiply C_m_CA by mghgi to get GHGI in commodity format
+ghgi_c <- C_m_CA %*% mghgi
+
+#Add household back in
+ghgi_c <- rbind(ghgi_c,"F010/US-CA"=ghgi["F010/US-CA","Greenhouse Gases"])
+
+#Create a table to compare CBE and GHGI by sector
+compare <- merge(cbe_fromCA, ghgi_c, by=0)
+colnames(compare) <- c("Sector", "CBE_fromCA", "GHGI")
+compare$CBE_frac_of_GHGI <- compare$'CBE_fromCA'/compare$GHGI
+rownames(compare) <- rownames(cbe_fromCA)
+
+kable(compare, caption = "Comparison of CBE from CA using direct perspective vs GHGI")
+
+```
+
+Show the commodit
+```{r comswithhigherGHGs, echo=FALSE}
+higher_ghg <- subset(compare, CBE_frac_of_GHGI > 1,c("CBE_frac_of_GHGI"), drop=FALSE)
+kable(higher_ghg, caption = "Commodities with CBE greater than GHGI")
+```
+
+
+
+## Try it with domestic requirements only
+
+```{r calculateCBEdirectwithdomestic, echo=FALSE}
+
+cbe <- calculateStateCBE(model,perspective="DIRECT", domestic=TRUE)
+
+cbe_fromCA <- subset(cbe, endsWith(rownames(cbe), "CA")) 
+
+```
+
+Total California CBE from CA in 2019 calculated with the direct perspective with domestic requirements is `r sum(cbe_fromCA)` metric tons CO2e.
+The total calculated from all locations is `r sum(cbe)` metric tons CO2e.
+This is the same as without domestic requirements.
+
+```{r compareCBEGHGIdirectonlydomestic, echo=FALSE}
+
+compare <- merge(cbe_fromCA, ghgi_c, by=0, how="right")
+
+colnames(compare) <- c("Sector", "CBE_fromCA", "GHGI")
+
+compare$CBE_frac_of_GHGI <- compare$'CBE_fromCA'/compare$GHGI
+
+kable(compare, caption = "Comparison of CBE from CA using direct perspective and domestic inputs only vs GHGI")
+
+
+```
+
+To take a clos
+We can also compare the total uses of CA commodities with the total commodity output (q). The total uses should not be greater than q.
+
+```{r compareUsesDirect, echo=FALSE}
+#
+demand_vectors <- model$DemandVectors$vectors
+prod <- data.frame(demand_vectors$`2019_US-CA_Production_Domestic`)
+cons <- data.frame(demand_vectors$`2019_US-CA_Consumption_Domestic`)
+
+
+prod_soi <- subset(prod, endsWith(rownames(prod), soi))
+cons_soi <- subset(cons, endsWith(rownames(cons), soi))
+
+q <- matrix(model$q,dimnames = c(list(names(model$q), "q")))
+q_soi <-  subset(q, endsWith(rownames(q), soi), drop=FALSE)
+
+intermediate_uses <- getStateUsebyType(model, type="intermediate", domestic=TRUE)
+intermediate_uses_soi <- subset(intermediate_uses, endsWith(rownames(intermediate_uses), soi))
+
+compare_use <- cbind(prod_soi, cons_soi, intermediate_uses_soi, q_soi)
+colnames(compare_use) <- c("Production_Demand", "Consumption_Demand", "Intermediate_Uses", "q")
+
+compare_use$q_calc_consumption <- rowSums(compare_use[,c("Intermediate_Uses","Consumption_Demand")])
+compare_use$cons_frac_of_q <- compare_use$q_calc_consumption/compare_use$q 
+
+compare_use$q_calc_production <- rowSums(compare_use[,c("Intermediate_Uses","Production_Demand")])
+compare_use$prod_frac_of_q <- compare_use$q_calc_production/compare_use$q
+
+
+kable(compare_use, caption = "Comparison of Uses to Commodity output (q) for production and consumption with domestic requirements only")
+```
+
+Some of the commodities have uses greater than q. Show these.
+```{r higherUses, echo=FALSE}
+
+higher_uses <- subset(compare_use, cons_frac_of_q > 1,c("cons_frac_of_q"), drop=FALSE)
+kable(higher_uses, caption = "Commodities with Uses greater than output (q)")
+
+
+```
+
+These require further investigation.
 
 
