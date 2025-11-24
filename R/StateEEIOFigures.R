@@ -2,6 +2,108 @@
 library(ggplot2)
 library(dplyr)
 
+
+#' Plot specified matrix coefficients as box and whisker plot
+#' @param model_list List of completed EEIO models of all 50 states
+#' @param matrix_name Name of model matrix to extract data from, e.g. "B"
+#' @param indicator Row name in the specified matrix
+#' @param sector_to_remove Code of one or more BEA sectors that will be removed from the plot. Can be "".
+#' @param y_title The title of y axis, excluding unit.
+#' @param xlim optional upper limit for X-axis.
+#' @param scale, int, number of digits to remove from x-axis
+#' @export
+plotTwoRegionBoxWhisker <- function(model_list, matrix_name, indicator, sector_to_remove="", y_title,
+                                    xlim=NA, scale=0) {
+  
+  df <- prepareDFforFigure(model_list=model_list, matrix_name=matrix_name, 
+                           perspective=NULL, indicator=indicator,
+                           sector_to_remove=sector_to_remove, y_title=y_title)
+  # drop the RoUS coefficient
+  df <- subset(df, df$region != "RoUS")
+  df_wide <- reshape2::dcast(df, Indicator + Sector + color + GroupName + SectorName ~ modelname, value.var = "Value")
+  df <- reshape2::melt(df_wide, id.vars = c("Indicator", "Sector", "color", "GroupName", "SectorName"),
+                       variable.name = "modelname", value.name = "Value")
+  df <- df[order(df$GroupName), ]
+  label_colors <- rev(unique(df[, c("SectorName", "color")])[, "color"])
+  df$x <- df$SectorName
+  
+  df <- df[complete.cases(df), ]
+  df$Value = df$Value / 10^scale
+  
+  # plot
+  # https://ggplot2.tidyverse.org/reference/geom_boxplot.html
+  
+  p <- ggplot(df, aes(x = Value,
+                      y = factor(x, levels = rev(unique(x))),
+                      fill = GroupName,
+  ))
+  
+  p <- p + geom_boxplot(outlier.size = 1) +
+    scale_fill_manual(values = unique(rev(label_colors))) +
+    labs(x = y_title,
+         y = element_blank()) +
+    theme(axis.text = element_text(color = "black", size = 15),
+          axis.text.y = element_text(size = 10, color = label_colors),
+          axis.title.x = element_text(size = 10), legend.title = element_blank(),
+          legend.justification = c(1, 1), axis.ticks = element_blank(),
+          panel.grid.minor.y = element_blank(), plot.margin = margin(c(5, 20, 5, 5)))
+  if(!is.na(xlim)){
+    p <- p + xlim(0, xlim)
+  }
+  
+  return(p)
+}
+
+#' Plot results for specified sector on map
+#' @param model_list List of completed EEIO models of all 50 states
+#' @param indicator Row name in the specified matrix for the line plot
+#' @param sector The selected sector to highlight in the map, NULL to return all sectors and subset later.
+#' @param demand, e.g., "Consumption" or "Production"
+#' @param matrix_name, e.g., "N", use NULL if running a demand vector
+plotMapResults <- function(model_list, indicator, sector=NULL, demand="Consumption", matrix_name=NULL) {
+  df <- prepareDFforFigure(model_list=model_list, matrix_name=matrix_name, perspective="DIRECT",
+                           indicator=indicator, sector_to_remove="", demand=demand,
+                           combine_SoIRoUS=FALSE)
+  if(!is.null(sector)){
+    df <- subset(df, df$Sector == sector)    
+  }
+  if(is.null(matrix_name)) {
+    df['perspective'] = 'DIRECT'
+    df['demand_type'] = demand
+    df2 <- prepareDFforFigure(model_list=model_list, matrix_name=matrix_name, perspective="FINAL",
+                              indicator=indicator, sector_to_remove="", demand=demand,
+                              combine_SoIRoUS=FALSE)
+    df2['perspective'] = 'FINAL'
+    df2['demand_type'] = demand
+    if(!is.null(sector)) {
+      df2 <- subset(df2, df2$Sector == sector)
+    }
+    df_combined <- rbind(df, df2)
+  } else {
+    df_combined <- df
+  }
+  
+  df_combined$state <- gsub("US-", "", df_combined$modelname)
+  return(df_combined)
+  
+  # https://www.storybench.org/plot-state-state-data-map-u-s-r/
+  # states <- read.csv(file.path("../../data/state_lat_long.csv"), header=TRUE, stringsAsFactors=FALSE)
+  # # states <- read.csv(file.path("data/state_lat_long.csv"), header=TRUE, stringsAsFactors=FALSE)
+  # states["state"] <- paste0("US-", states$state)
+  # df2 <- merge(df2, states, by.x = 'modelname', by.y = 'state')
+  # 
+  # # plot
+  # devtools::install_github("wmurphyrd/fiftystater")
+  # data("fifty_states")
+  # p <- ggplot() + geom_polygon(data=fifty_states, aes(x=long, y=lat, group = group),color="white", fill="grey92") + 
+  #       geom_point(data=df2, aes(x=lon, y=lat, size = Value), color="black") + 
+  #       scale_size(name="") + 
+  #       guides(size=guide_legend(paste(y_title, sector, sep="-"))) +
+  #       theme_void()
+  # 
+  # return(p)
+}
+
 #' Stacked bar chart (e.g., for showing location of impact as SoI or RoUS or RoW)
 #' @param df, must include "Sector", "Value" and "ID" columns
 stackedBarChartResultFigure <- function(df, model, grouping="Sector") {
