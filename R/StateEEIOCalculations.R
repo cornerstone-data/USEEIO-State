@@ -18,9 +18,17 @@ calculateStateCBE <- function(model, CO2e=TRUE, perspective="FINAL",
                                    show_RoW=show_RoW)
   # Note this function requires a model with only a single indicator
   if(CO2e) {
-    r<-r$H_l
+    if(perspective=="DIRECT") {
+      r <- r$H_r  
+    } else {
+      r <- r$H_l
+    }
   } else {
-    r<-r$G_l
+    if(perspective=="DIRECT") {
+      r <- r$G_r  
+    } else {
+      r <- r$G_l
+    }
   }
   return(r)
 }
@@ -189,7 +197,7 @@ aggregateStateResultMatrix <- function(model, matrix, region) {
 
 
 subsetColumnsByString <- function(matrix, s) {
-  m <- matrix[, stringr::str_detect(colnames(matrix), s)]
+  m <- matrix[, stringr::str_detect(colnames(matrix), s),drop=FALSE]
   return(m)
 }
 
